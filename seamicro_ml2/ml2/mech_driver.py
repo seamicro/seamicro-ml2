@@ -41,8 +41,9 @@ def _get_switch_info(switch_info, host_id):
     """Get the chassis IP and server ID the host_id belongs to."""
     for switch_ip in switch_info:
         if host_id in switch_info[switch_ip]:
-            return (switch_ip, switch_info[switch_ip][host_id])
-    return (None, None)
+            info = switch_info[switch_ip][host_id].split(",")
+            return (switch_ip, info[0], info[1:])
+    return (None, None, None)
 
 
 class SeaMicroDriver(object):
@@ -52,8 +53,6 @@ class SeaMicroDriver(object):
     This code is the backend implementation for the SeaMicro ML2
     MechanismDriver for OpenStack Neutron.
     """
-    auth = None
-    out_of_sync = True
 
     def __init__(self, **switch):
         LOG.debug("Initializing SeaMicro ML2 driver")
@@ -273,15 +272,18 @@ class SeaMicroDriver(object):
                 network_id)
 
         vlan_id = network['vlan']
-        switch_ip, server_id = _get_switch_info(self._switch, host_id)
-        if switch_ip is not None and server_id is not None:
+        switch_ip, server_id, nics = _get_switch_info(self._switch, host_id)
+        if switch_ip is not None and server_id is not None and nics is not None:
             try:
                 interfaces = self.client[switch_ip].interfaces.list()
                 for interface in interfaces:
                     interface.add_tagged_vlan(vlan_id)
 
                 server = self.client[switch_ip].servers.get(server_id)
-                server.set_tagged_vlan(vlan_id, all_nics=True)
+                if nics:
+                    server.set_tagged_vlan(vlan_id, nics=nics)
+                else:
+                    server.set_tagged_vlan(vlan_id)
             except seamicro_client_exception.ClientException as ex:
                 LOG.exception(
                     _LE("SeaMicro driver: failed to create port"
@@ -339,15 +341,18 @@ class SeaMicroDriver(object):
 
         vlan_id = network['vlan']
 
-        switch_ip, server_id = _get_switch_info(self._switch, host_id)
-        if switch_ip is not None and server_id is not None:
+        switch_ip, server_id, nics = _get_switch_info(self._switch, host_id)
+        if switch_ip is not None and server_id is not None and nics is not None:
             try:
                 interfaces = self.client[switch_ip].interfaces.list()
                 for interface in interfaces:
                     interface.remove_tagged_vlan(vlan_id)
 
                 server = self.client[switch_ip].servers.get(server_id)
-                server.unset_tagged_vlan(vlan_id, all_nics=True)
+                if nics:
+                    server.unset_tagged_vlan(vlan_id, nics=nics)
+                else:
+                    server.unset_tagged_vlan(vlan_id)
             except seamicro_client_exception.ClientException as ex:
                 LOG.exception(
                     _LE("SeaMicro driver: failed to delete port"
